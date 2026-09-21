@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleRequest, type OpenAiFetch } from "../src/assistant";
 
 const config = { apiKey: "test-key", model: "gpt-5.6-luna" };
@@ -90,6 +90,35 @@ describe("Switchboard assistant Worker", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "rate_limited", message: "AI service is busy. Try again shortly." },
     });
+  });
+
+  it("logs sanitized upstream quota details and returns only a safe error", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handleRequest(assistantRequest({ message: "Hello" }), config,
+        async () => Response.json({ error: {
+          type: "insufficient_quota", code: "insufficient_quota",
+          message: "Quota exhausted for test-key and sk-proj-example-secret",
+        } }, { status: 429, headers: { "x-request-id": "req_test", "retry-after": "60" } }));
+      expect(response.status).toBe(429);
+      await expect(response.json()).resolves.toEqual({ error: {
+        code: "api_quota_billing", message: "OpenAI API quota or billing needs attention.",
+      } });
+      const entry = JSON.parse(String(log.mock.calls[0]?.[0]));
+      expect(entry).toMatchObject({
+        event: "openai_upstream_error", endpoint: "https://api.openai.com/v1/responses",
+        model: "gpt-5.6-luna", upstreamStatus: 429,
+        type: "insufficient_quota", code: "insufficient_quota",
+        message: "Quota exhausted for [REDACTED] and [REDACTED]",
+        upstreamRequestId: "req_test", retryAfter: "60",
+      });
+    } finally { log.mockRestore(); }
+  });
+
+  it("distinguishes model access errors from quota and authentication", async () => {
+    const response = await handleRequest(assistantRequest({ message: "Hello" }), config,
+      async () => Response.json({ error: { code: "model_not_found", type: "invalid_request_error", message: "No access" } }, { status: 404 }));
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "model_unavailable" } });
   });
 
   it("rejects an empty Responses API payload safely", async () => {

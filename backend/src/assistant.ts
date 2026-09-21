@@ -98,7 +98,13 @@ export async function handleRequest(
     });
 
     if (!openAiResponse.ok) {
-      throw mapOpenAiStatus(openAiResponse.status);
+      const details = await readOpenAiError(openAiResponse, config.apiKey);
+      console.error(JSON.stringify({
+        event: "openai_upstream_error", requestId,
+        endpoint: OPENAI_RESPONSES_URL, model: config.model,
+        upstreamStatus: openAiResponse.status, ...details,
+      }));
+      throw mapOpenAiStatus(openAiResponse.status, details);
     }
 
     let rawResponse: unknown;
@@ -232,7 +238,45 @@ function extractAssistantText(value: unknown): string | null {
   return parts.length > 0 ? parts.join("\n") : null;
 }
 
-function mapOpenAiStatus(status: number): SafeHttpError {
+interface OpenAiErrorDetails {
+  readonly type: string | null;
+  readonly code: string | null;
+  readonly message: string | null;
+  readonly upstreamRequestId: string | null;
+  readonly retryAfter: string | null;
+}
+
+async function readOpenAiError(response: Response, apiKey: string): Promise<OpenAiErrorDetails> {
+  const sanitize = (value: unknown): string | null => typeof value === "string"
+    ? value.split(apiKey).join("[REDACTED]")
+      .replace(/sk-[A-Za-z0-9_.*-]+/g, "[REDACTED]")
+      .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+      .slice(0, 4000)
+    : null;
+  let error: Record<string, unknown> = {};
+  try {
+    const payload: unknown = await response.json();
+    if (isRecord(payload) && isRecord(payload.error)) error = payload.error;
+  } catch { /* Never log raw HTML, malformed payloads, or unselected headers. */ }
+  return {
+    type: sanitize(error.type), code: sanitize(error.code), message: sanitize(error.message),
+    upstreamRequestId: sanitize(response.headers.get("x-request-id")),
+    retryAfter: sanitize(response.headers.get("retry-after")),
+  };
+}
+
+function mapOpenAiStatus(status: number, details: OpenAiErrorDetails): SafeHttpError {
+  const quotaCodes = new Set([
+    "insufficient_quota", "credit_balance_exhausted", "billing_hard_limit_reached",
+    "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+  ]);
+  if (details.type === "insufficient_quota" || quotaCodes.has(details.code ?? "")) {
+    return new SafeHttpError(429, "api_quota_billing", "OpenAI API quota or billing needs attention.");
+  }
+  if (details.code === "model_not_found" || details.code === "model_not_available") {
+    return new SafeHttpError(503, "model_unavailable", "The configured OpenAI model is unavailable for this project.");
+  }
   if (status === 429) {
     return new SafeHttpError(429, "rate_limited", "AI service is busy. Try again shortly.");
   }
