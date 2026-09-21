@@ -1,0 +1,7 @@
+Model: sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01
+Source: https://github.com/k2-fsa/sherpa-onnx/releases/tag/kws-models
+License: Apache License 2.0
+
+The selected encoder, decoder, joiner, and token files are redistributed under
+the model's Apache License 2.0 declaration. The keyword token file was generated
+locally from the model's BPE vocabulary for the phrase HEY LUCAS.

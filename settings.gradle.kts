@@ -26,4 +26,6 @@ include(
     ":providers:openai",
     ":voice:voice-api",
     ":voice:android-tts",
+    ":voice:speech-api",
+    ":voice:android-speech",
 )

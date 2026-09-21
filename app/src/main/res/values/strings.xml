@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Switchboard</string>
+    <string name="wake_word_channel_name">Wake word listening</string>
+    <string name="wake_word_channel_description">Shows when Switchboard is ready for its wake phrase.</string>
+    <string name="wake_word_notification_title">Switchboard is listening</string>
+    <string name="wake_word_notification_text">Waiting for “%1$s”</string>
+    <string name="stop_listening">Stop</string>
+</resources>
+

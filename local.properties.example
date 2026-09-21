@@ -1,0 +1,2 @@
+sdk.dir=/absolute/path/to/Android/sdk
+SWITCHBOARD_BACKEND_URL=https://switchboard-assistant-api.your-subdomain.workers.dev

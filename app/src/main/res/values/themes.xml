@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Switchboard" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#315C49</item>
+        <item name="android:navigationBarColor">#F4F2EB</item>
+        <item name="android:statusBarColor">#F4F2EB</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
+
