@@ -58,7 +58,7 @@ export async function handleRequest(
     if (request.method !== "GET") {
       return errorResponse(405, "method_not_allowed", "Method not allowed.", requestId);
     }
-    return jsonResponse({ ok: true }, 200, requestId);
+    return jsonResponse({ ok: true, service: "switchboard", version: "0.2", openaiConfigured: config.apiKey.trim().length > 0, model: config.model }, 200, requestId);
   }
 
   if (url.pathname !== "/api/assistant") {

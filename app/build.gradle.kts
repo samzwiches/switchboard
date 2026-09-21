@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.net.URI
 
 plugins {
     alias(libs.plugins.android.application)
@@ -13,6 +14,36 @@ val switchboardBackendUrl = providers.gradleProperty("SWITCHBOARD_BACKEND_URL").
     ?: System.getenv("SWITCHBOARD_BACKEND_URL")
     ?: switchboardLocalProperties.getProperty("SWITCHBOARD_BACKEND_URL")
     ?: ""
+val switchboardDebugPort = switchboardLocalProperties.getProperty("SWITCHBOARD_DEBUG_PORT", "8787")
+    .toInt().also { require(it in 1024..65535) }
+val switchboardDebugLanUrl = switchboardLocalProperties.getProperty("SWITCHBOARD_DEBUG_LAN_URL", "")
+val switchboardDebugHosts = listOf("10.0.2.2", "127.0.0.1", "localhost") +
+    listOf(switchboardDebugLanUrl, switchboardBackendUrl).mapNotNull {
+        runCatching { URI(it).takeIf { uri -> uri.scheme == "http" }?.host }.getOrNull()
+    }
+abstract class GenerateDebugNetworkSecurity : DefaultTask() {
+    @get:Input abstract val hosts: ListProperty<String>
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction fun generate() {
+        val xml = outputDirectory.file("xml/switchboard_debug_network_security.xml").get().asFile
+        xml.parentFile.mkdirs()
+        val domains = hosts.get().distinct()
+        require(domains.all { it.matches(Regex("[A-Za-z0-9.:-]+")) })
+        xml.writeText("""<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+${domains.joinToString("\n") { "        <domain includeSubdomains=\"false\">$it</domain>" }}
+    </domain-config>
+</network-security-config>
+""")
+    }
+}
+val generateDebugNetworkSecurity = tasks.register<GenerateDebugNetworkSecurity>("generateDebugNetworkSecurity") {
+    hosts.set(switchboardDebugHosts)
+    outputDirectory.set(layout.buildDirectory.dir("generated/switchboardDebug/res"))
+}
 fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -27,6 +58,15 @@ android {
         versionCode = 1
         versionName = "0.2.0"
         buildConfigField("String", "SWITCHBOARD_BACKEND_URL", buildConfigString(switchboardBackendUrl))
+        buildConfigField("String", "DEBUG_EMULATOR_BACKEND_URL", "\"\"")
+        buildConfigField("String", "DEBUG_LAN_BACKEND_URL", "\"\"")
+    }
+
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("String", "DEBUG_EMULATOR_BACKEND_URL", buildConfigString("http://10.0.2.2:$switchboardDebugPort"))
+            buildConfigField("String", "DEBUG_LAN_BACKEND_URL", buildConfigString(switchboardDebugLanUrl))
+        }
     }
 
     compileOptions {
@@ -69,4 +109,12 @@ dependencies {
     implementation(libs.androidx.compose.material3)
 
     testImplementation(libs.junit)
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.sources.res?.addGeneratedSourceDirectory(
+            generateDebugNetworkSecurity, GenerateDebugNetworkSecurity::outputDirectory,
+        )
+    }
 }

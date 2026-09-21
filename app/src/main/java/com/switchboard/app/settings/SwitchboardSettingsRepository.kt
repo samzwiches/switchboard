@@ -43,6 +43,11 @@ class SwitchboardSettingsRepository(context: Context, private val defaultBackend
         mutableSettings.update { it.copy(backendUrl = normalized) }
     }
 
+    fun resetBackendUrl() {
+        preferences.edit { remove(KEY_BACKEND_URL) }
+        mutableSettings.update { it.copy(backendUrl = defaultBackendUrl) }
+    }
+
     private fun readSettings(): SwitchboardSettings {
         val selected = preferences.getString(KEY_SELECTED_PROVIDER, MOCK_OPENAI_PROVIDER_ID)
             ?.takeIf { it in SUPPORTED_PROVIDER_IDS }

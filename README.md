@@ -33,7 +33,7 @@ The existing Android assistant-role components remain registered: `RoleManager.R
 
 Select either provider under **Assistant settings**. Selecting a different provider cancels any active interaction, closes the current in-memory session, and uses the new provider for the next message. The app never silently falls back from OpenAI to mock.
 
-If `SWITCHBOARD_BACKEND_URL` is missing, OpenAI remains selectable but clearly reports **Unavailable — backend URL is not configured** and returns a controlled configuration error.
+Debug builds automatically choose a development URL when no address is saved. Missing addresses show an actionable error and a direct **Open Debug Settings** button. Release builds still require explicit configuration.
 
 ## OpenAI implementation
 
@@ -85,52 +85,41 @@ The local `.dev.vars` file is not uploaded automatically.
 
 ## Run the backend locally
 
+From the repository root:
+
 ```bash
-cd backend
-npm install
-npm run typegen
-npm run typecheck
-npm test
-npm run dev -- --ip 127.0.0.1 --port 8787
+./scripts/start-backend.sh
 ```
 
-Verify health:
+This runs the existing `backend/` Cloudflare Worker on **port 8787**, bound to `0.0.0.0` for access from the Mac, emulator, and a phone on the same Wi-Fi. It installs locked Node dependencies when missing and prints exact emulator/phone addresses. It detects an already-running Switchboard server rather than silently choosing a different port.
+
+Secrets are read from backend `.env`/`.dev.vars`, the process environment, or an ignored `SWITCHBOARD_SECRET_FILE` pointer in `backend/.env`. Existing files are preserved. This checkout's ignored `.env` points to the original backend's ignored secret file; no key was copied. `backend/.env.example` provides empty key and port configuration for other workstations.
 
 ```bash
 curl http://127.0.0.1:8787/health
 ```
 
-Expected response:
-
-```json
-{ "ok": true }
-```
-
-The API endpoint is `POST /api/assistant`. Unsupported paths and methods are rejected. CORS is permissive for development, requests are size-limited, upstream calls time out, and OpenAI authentication/rate-limit/server failures are mapped to safe status codes.
+Expected fields are `ok: true`, `service: "switchboard"`, `version: "0.2"`, `openaiConfigured: true`, and `model: "gpt-5.6-luna"`. A missing key returns `openaiConfigured: false`; health never makes a paid OpenAI request or verifies account quota.
 
 ## Configure the Android backend URL
 
-In a debug build, enter the server address under **Assistant settings → Backend URL → Save backend URL**. This takes effect without rebuilding and clears the current conversation. Only this non-secret address is saved on Android.
+Run the startup script before building the debug APK. It updates only non-secret development values in ignored root `local.properties`:
 
-To set a build-time default instead, add it to root `local.properties` (never add a key there):
+- `SWITCHBOARD_DEBUG_PORT`: default `8787` (override `PORT` in backend `.env`).
+- `SWITCHBOARD_DEBUG_LAN_URL`: the current Mac LAN address, detected automatically.
 
-```properties
-SWITCHBOARD_BACKEND_URL=https://switchboard-assistant-api.your-subdomain.workers.dev
-```
+With no saved URL or explicit `SWITCHBOARD_BACKEND_URL`, a debug build chooses:
 
-For a USB-connected device using the local Worker:
+- Android Emulator: **`http://10.0.2.2:8787`**.
+- Physical phone: the Mac's LAN URL printed by the script; both devices must use the same Wi-Fi.
 
-```bash
-adb reverse tcp:8787 tcp:8787
-```
+No development fallback is added to release builds. An explicit `SWITCHBOARD_BACKEND_URL` remains supported as before.
 
-and use:
+Under **Debug Settings**, the address stays editable. **Save backend URL** applies it and clears the active conversation. **Use development default** clears a previously saved address and restores this APK's emulator/phone default. **TEST BACKEND** checks the displayed address and reports connection, backend version, key presence, and model. Testing an unsaved edit does not save it.
 
-```properties
-SWITCHBOARD_BACKEND_URL=http://127.0.0.1:8787
-```
+HTTP is permitted only for the emulator host, loopback, and the exact local/configured development hosts in a generated debug-only network security resource. Release keeps cleartext disabled and contains neither this resource nor the Mac LAN fallback. If the Mac IP or port changes, rerun the startup script, rebuild/install the debug APK, and tap **Use development default** if an old address was saved. A new HTTP host needs a rebuild to update the narrow allowlist; HTTPS addresses remain editable without a rebuild.
 
-The debug manifest permits cleartext traffic for local development. The main/release manifest keeps cleartext disabled. Changing the debug UI setting needs no rebuild. Changing the build-time default requires rebuilding.
+See [local development setup](docs/local-development.md) for the exact Mac commands and verification results.
 
 ## Deploy the Worker
 
@@ -240,4 +229,4 @@ See [architecture](docs/architecture.md), [security](docs/security.md), and [roa
 
 ## Current checkout validation
 
-See [the September 21 validation report](docs/v0.2-checkout-validation.md) for source restoration, changed files, current test results, and the live API blocker. Earlier work logs describe earlier sessions.
+See [local development setup](docs/local-development.md) for the current backend connection commands and validation. The [earlier checkout restoration report](docs/v0.2-checkout-validation.md) records the prior live API rate-limit result. Earlier work logs describe earlier sessions.

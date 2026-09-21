@@ -1,5 +1,8 @@
 package com.switchboard.app.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +54,8 @@ import com.switchboard.core.assistant.MessageAuthor
 import com.switchboard.core.wakeword.WakeWordPhase
 import com.switchboard.core.wakeword.WakeWordState
 import com.switchboard.voice.speech.api.SpeechInputState
+import com.switchboard.providers.openai.BackendHealthChecker
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,6 +66,7 @@ private val Moss = Color(0xFF315C49)
 private val SoftMoss = Color(0xFFDCE7DF)
 private val Rust = Color(0xFFA54A2A)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SwitchboardApp(
     settings: SwitchboardSettings,
@@ -75,11 +82,14 @@ fun SwitchboardApp(
     onWakeWordToggled: (Boolean) -> Unit,
     onProviderSelected: (String) -> Unit,
     onBackendUrlSaved: (String) -> Unit,
+    onBackendUrlReset: () -> Unit,
     onRequestAssistantRole: () -> Unit,
     onSimulateWakeWord: () -> Unit,
     onSendMessage: (String) -> Unit,
     onDismissConversation: () -> Unit,
 ) {
+    val debugSettings = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     MaterialTheme {
         Surface(color = Paper, contentColor = Ink, modifier = Modifier.fillMaxSize()) {
             Column(
@@ -99,6 +109,12 @@ fun SwitchboardApp(
                         onDismiss = onDismissConversation,
                     )
                 }
+                if (BuildConfig.DEBUG && !openAiConfigured) {
+                    Text("Switchboard backend isn’t configured. Open Debug Settings to set the backend address.")
+                    OutlinedButton(onClick = { scope.launch { debugSettings.bringIntoView() } }) {
+                        Text("Open Debug Settings")
+                    }
+                }
                 WakeDiagnosticsCard(
                     wakeWordState = wakeWordState,
                     assistantState = assistantState,
@@ -108,6 +124,7 @@ fun SwitchboardApp(
                     foregroundServiceRunning = foregroundServiceRunning,
                 )
                 SettingsCard(
+                    modifier = Modifier.bringIntoViewRequester(debugSettings),
                     settings = settings,
                     microphoneGranted = microphoneGranted,
                     roleStatus = roleStatus,
@@ -117,6 +134,7 @@ fun SwitchboardApp(
                     onWakeWordToggled = onWakeWordToggled,
                     onProviderSelected = onProviderSelected,
                     onBackendUrlSaved = onBackendUrlSaved,
+                    onBackendUrlReset = onBackendUrlReset,
                     onRequestAssistantRole = onRequestAssistantRole,
                     onSimulateWakeWord = onSimulateWakeWord,
                 )
@@ -155,6 +173,7 @@ private fun Header() {
 
 @Composable
 private fun SettingsCard(
+    modifier: Modifier = Modifier,
     settings: SwitchboardSettings,
     microphoneGranted: Boolean,
     roleStatus: AssistantRoleStatus,
@@ -164,10 +183,12 @@ private fun SettingsCard(
     onWakeWordToggled: (Boolean) -> Unit,
     onProviderSelected: (String) -> Unit,
     onBackendUrlSaved: (String) -> Unit,
+    onBackendUrlReset: () -> Unit,
     onRequestAssistantRole: () -> Unit,
     onSimulateWakeWord: () -> Unit,
 ) {
     Card(
+        modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.82f)),
         shape = RoundedCornerShape(20.dp),
     ) {
@@ -194,8 +215,8 @@ private fun SettingsCard(
                     text = when {
                         settings.selectedProviderId == MOCK_OPENAI_PROVIDER_ID ->
                             "Offline mock — no network request is made"
-                        openAiConfigured -> "Secure backend URL configured"
-                        else -> "Unavailable — backend URL is not configured"
+                        openAiConfigured -> "Backend address configured"
+                        else -> if (BuildConfig.DEBUG) "Open Debug Settings below to configure the backend." else "Unavailable — backend URL is not configured"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (settings.selectedProviderId == OPENAI_BACKEND_PROVIDER_ID &&
@@ -204,18 +225,39 @@ private fun SettingsCard(
                 )
             }
             if (BuildConfig.DEBUG) {
+                Text("Debug Settings", style = MaterialTheme.typography.titleMedium)
                 var backendUrl by remember(settings.backendUrl) { mutableStateOf(settings.backendUrl) }
+                var healthResult by remember(backendUrl) { mutableStateOf<String?>(null) }
+                var testing by remember { mutableStateOf(false) }
+                val healthChecker = remember { BackendHealthChecker() }
+                val healthScope = rememberCoroutineScope()
                 OutlinedTextField(
                     value = backendUrl,
                     onValueChange = { backendUrl = it },
+                    enabled = !testing,
                     label = { Text("Backend URL") },
                     supportingText = { Text("Server address only. Never enter an API key.") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedButton(onClick = { onBackendUrlSaved(backendUrl) }) {
+                OutlinedButton(enabled = !testing, onClick = { onBackendUrlSaved(backendUrl) }) {
                     Text("Save backend URL")
                 }
+                OutlinedButton(enabled = !testing, onClick = onBackendUrlReset) {
+                    Text("Use development default")
+                }
+                OutlinedButton(enabled = !testing, onClick = {
+                    val address = backendUrl
+                    testing = true
+                    healthScope.launch {
+                        try { healthResult = healthChecker.check(address) }
+                        finally { testing = false }
+                    }
+                }) {
+                    Text(if (testing) "TESTING…" else "TEST BACKEND")
+                }
+                if (backendUrl != settings.backendUrl) Text("Save this address to use it for conversations.")
+                healthResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
             OutlinedTextField(
                 value = settings.wakePhrase,

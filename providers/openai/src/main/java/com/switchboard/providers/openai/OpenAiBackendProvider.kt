@@ -36,6 +36,7 @@ import kotlin.coroutines.resumeWithException
 
 data class OpenAiBackendConfig(
     val baseUrl: String,
+    val configurationErrorMessage: String = "OpenAI backend URL is not configured.",
     val conversationHistoryLimit: Int = 10,
     val connectTimeoutMillis: Long = 10_000L,
     val readTimeoutMillis: Long = 35_000L,
@@ -196,7 +197,7 @@ private class OpenAiBackendSession(
         val base = config.baseUrl.trim().toHttpUrlOrNull()
             ?: throw AiProviderException(
                 kind = AiProviderErrorKind.Configuration,
-                userMessage = "OpenAI backend URL is not configured.",
+                userMessage = config.configurationErrorMessage,
             )
         return base.newBuilder()
             .addPathSegments("api/assistant")

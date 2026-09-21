@@ -126,6 +126,10 @@ private fun MainActivity.SwitchboardRoute() {
                 permissionLauncher.launch(permissions.toTypedArray())
             }
         },
+        onBackendUrlReset = {
+            graph.settings.resetBackendUrl()
+            scope.launch { graph.assistantController.onProviderChanged() }
+        },
         onBackendUrlSaved = { url ->
             graph.settings.setBackendUrl(url)
             scope.launch { graph.assistantController.onProviderChanged() }

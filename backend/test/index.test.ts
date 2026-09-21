@@ -12,7 +12,13 @@ describe("Switchboard assistant Worker", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
+    await expect(response.json()).resolves.toEqual({ ok: true, service: "switchboard", version: "0.2", openaiConfigured: true, model: "gpt-5.6-luna" });
+  });
+
+  it("health reports missing key without exposing credentials or calling OpenAI", async () => {
+    const response = await handleRequest(new Request("https://example.test/health"),
+      { ...config, apiKey: "" }, rejectingFetch());
+    expect(await response.json()).toEqual({ ok: true, service: "switchboard", version: "0.2", openaiConfigured: false, model: config.model });
   });
 
   it("returns extracted Responses API output text", async () => {

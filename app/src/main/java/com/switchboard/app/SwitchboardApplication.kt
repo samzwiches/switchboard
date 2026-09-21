@@ -2,6 +2,9 @@ package com.switchboard.app
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
+import com.switchboard.app.settings.resolveBackendUrl
+import com.switchboard.app.settings.isAndroidEmulator
 import com.switchboard.core.actions.DefaultActionRouter
 import com.switchboard.core.actions.MockActionHandler
 import com.switchboard.core.assistant.AssistantController
@@ -31,7 +34,14 @@ class SwitchboardApplication : Application() {
 class SwitchboardGraph(context: Context) {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    val settings = SwitchboardSettingsRepository(context, BuildConfig.SWITCHBOARD_BACKEND_URL)
+    val settings = SwitchboardSettingsRepository(context, resolveBackendUrl(
+        savedUrl = null,
+        configuredUrl = BuildConfig.SWITCHBOARD_BACKEND_URL,
+        debug = BuildConfig.DEBUG,
+        emulator = isAndroidEmulator(Build.FINGERPRINT, Build.MODEL, Build.HARDWARE, Build.PRODUCT),
+        emulatorUrl = BuildConfig.DEBUG_EMULATOR_BACKEND_URL,
+        lanUrl = BuildConfig.DEBUG_LAN_BACKEND_URL,
+    ))
     val wakeWordServiceMonitor = WakeWordServiceMonitor()
     val wakeWordDetector = SherpaOnnxWakeWordDetector(context, applicationScope)
     val wakeWordProvider = DefaultWakeWordProvider(wakeWordDetector, applicationScope)
@@ -41,7 +51,12 @@ class SwitchboardGraph(context: Context) {
         get() {
             val url = settings.settings.value.backendUrl
             return cachedOpenAiProvider?.takeIf { it.config.baseUrl == url }
-                ?: OpenAiBackendProvider(OpenAiBackendConfig(baseUrl = url)).also {
+                ?: OpenAiBackendProvider(OpenAiBackendConfig(
+                    baseUrl = url,
+                    configurationErrorMessage = if (BuildConfig.DEBUG) {
+                        "Switchboard backend isn’t configured. Open Debug Settings to set the backend address."
+                    } else "OpenAI backend URL is not configured.",
+                )).also {
                     cachedOpenAiProvider = it
                 }
         }
